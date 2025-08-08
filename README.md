@@ -23,6 +23,8 @@
 
 A powerful caching and reading system that eliminates Claude Code's 25,000 token file limit. Read files with millions of tokens, process them in parallel, and cache them for instant access.
 
+![Claude Code Unlimited Demo](images/claude-code-read.png)
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    THE PROBLEM                             │
