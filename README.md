@@ -48,6 +48,8 @@ Claude Code Unlimited automatically:
 - **Splits** large files into parallel chunks
 - **Bypasses** token limits completely
 - **Caches** in RAM for 500x faster re-reads
+- **Syncs** changes in real-time with file watching
+- **Persists** cache across sessions in single volume
 - **Intercepts** Read tool failures automatically
 
 ## 📦 Installation
@@ -69,19 +71,40 @@ cd claude-code-unlimited
 
 ## Usage
 
-### Automatic Mode
-Once installed, Claude Code will automatically use the cache system for large files. No configuration needed!
-
-### Manual Mode
+### Live Cache Mode (Recommended) 🔥
+Real-time file synchronization with persistent cache that survives across sessions:
 ```bash
+# Start live cache with file watching
+~/.claude/cache/cache-live.sh start
+
+# Check cache status
+~/.claude/cache/cache-live.sh status
+
+# Force sync all files
+~/.claude/cache/cache-live.sh sync
+
+# Watch sync activity in real-time
+~/.claude/cache/cache-live.sh watch-log
+```
+
+**Key Features:**
+- Uses persistent volume at `/Volumes/ClaudeCache`
+- Cache survives across runs (no data loss)
+- Project isolation using MD5 hashes
+- Automatic file change detection
+- Efficient rsync-based updates
+
+### Standard Cache Mode
+Static cache for maximum speed (doesn't auto-sync changes):
+```bash
+# Start standard cache system
+~/.claude/cache/cache-startup.sh start
+
 # Smart read any file (auto-detects size and method)
 ~/.claude/cache/smart-read.sh path/to/large/file.js
 
 # Force quantum parallel reading
 ~/.claude/cache/quantum-read.sh path/to/huge/file.js full
-
-# Start cache system for session
-~/.claude/cache/cache-startup.sh start
 ```
 
 ## 📊 Real Performance
@@ -98,6 +121,7 @@ Once installed, Claude Code will automatically use the cache system for large fi
 
 ## How It Works
 
+### Architecture Overview
 ```
      ┌──────────────┐
      │  Large File  │
@@ -124,16 +148,38 @@ Once installed, Claude Code will automatically use the cache system for large fi
      └──────┬──────┴───────────┘
             ▼
     ┌───────────────┐
+    │  RAM CACHE    │ ◄─── Persistent at /Volumes/ClaudeCache
+    └───────────────┘
+            │
+            ▼
+    ┌───────────────┐
     │   SUCCESS!    │
     └───────────────┘
 ```
 
+### Cache Structure
+```
+/Volumes/ClaudeCache/           # Persistent RAM disk
+├── cache/
+│   └── projects/
+│       ├── [project-hash-1]/   # First project
+│       │   ├── files/           # Cached file contents
+│       │   ├── search/          # Cached search results
+│       │   └── metadata/        # Project info
+│       └── [project-hash-2]/   # Second project
+│           └── ...
+```
+
 ## Features
 
+- **Persistent Cache** 🔥 - Single volume that persists across sessions
+- **Live Sync Mode** - Real-time cache updates with file changes
 - **No Token Limits** - Read files of any size
 - **Parallel Processing** - Split large files into chunks
 - **RAM Caching** - 500x faster repeated access
+- **Project Isolation** - Multiple projects cached separately
 - **Auto-Detection** - Smart routing based on file size
+- **File Watching** - fswatch (macOS) / inotify (Linux) integration
 - **Zero Config** - Works immediately after install
 - **Cross-Platform** - macOS, Linux support (Windows coming)
 
@@ -148,6 +194,24 @@ claude> Read the Dashboard.jsx file
 # Cache system detects 85k tokens, uses quantum read, success!
 ```
 
+### Working with Live Cache
+```bash
+# Start cache for your project
+cd /your/project
+~/.claude/cache/cache-live.sh start
+
+# Edit files normally - cache auto-updates
+vim src/large-component.js
+
+# Check what's cached
+~/.claude/cache/cache-live.sh status
+# Live Cache Statistics:
+#   RAM Disk: /Volumes/ClaudeCache (persistent)
+#   Current Project: your-project
+#   Project files: 247
+#   File watcher: Running (PID: 12345)
+```
+
 ### Processing Multiple Large Files
 ```bash
 # Read multiple framework files without errors
@@ -156,6 +220,22 @@ for file in src/components/*.jsx; do
 done
 ```
 
+## Technical Details
+
+### Persistent Cache System
+- **Single Volume**: All projects share `/Volumes/ClaudeCache`
+- **Project Isolation**: Each project gets unique hash-based subdirectory
+- **Efficient Updates**: Uses rsync for differential syncing
+- **File Watching**: Real-time detection of file changes
+- **Smart Cleanup**: Project-specific cache clearing
+
+### Performance Optimizations
+- RAM-based storage for instant access
+- Parallel chunk processing for large files
+- Memoized search results
+- Automatic cache invalidation
+- Background file watching
+
 ## 🤝 Contributing
 
 Contributions are welcome! Areas for improvement:
@@ -163,6 +243,7 @@ Contributions are welcome! Areas for improvement:
 - Streaming for ultra-large files (>10MB)
 - Integration with Claude Code core
 - Performance optimizations
+- Cache compression algorithms
 
 ## License
 
@@ -175,6 +256,18 @@ Created by [krushr](https://github.com/krushr1) with assistance from Claude
 ## Issues
 
 Found a bug? Have a suggestion? [Open an issue](https://github.com/krushr1/claude-code-unlimited/issues)
+
+## Requirements
+
+### macOS
+- fswatch for live mode: `brew install fswatch`
+- ripgrep for fast search: `brew install ripgrep`
+- fd for fast find (optional): `brew install fd`
+
+### Linux
+- inotify-tools for live mode: `apt install inotify-tools`
+- ripgrep for fast search: `apt install ripgrep`
+- fd-find for fast find (optional): `apt install fd-find`
 
 ## Support
 

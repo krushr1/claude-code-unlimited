@@ -4,18 +4,13 @@
 # Optimized for 500x faster file reads and 400x faster searches
 # Uses ripgrep, fd, parallel processing, and RAM-based caching
 
-# Use RAM disk on macOS or fallback to /tmp
-if [ -d "/Volumes/RAMDisk" ]; then
-    CACHE_DIR="/Volumes/RAMDisk/claude-cache-$$"
-elif [ -d "/dev/shm" ] && [ -w "/dev/shm" ]; then
-    CACHE_DIR="/dev/shm/claude-cache-$$"
-else
-    # Use /tmp as fallback (may be slower if not tmpfs)
-    CACHE_DIR="/tmp/claude-cache-$$"
-fi
+# Use persistent ClaudeCache volume
+CACHE_BASE="/Volumes/ClaudeCache"
+PROJECT_ROOT="$(pwd)"
+PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5sum 2>/dev/null | cut -c1-8 || echo "$PROJECT_ROOT" | md5 | cut -c1-8)
+CACHE_DIR="$CACHE_BASE/cache/projects/$PROJECT_HASH"
 CACHE_INDEX="$CACHE_DIR/index.json"
 CACHE_TIMEOUT=3600  # 1 hour default
-PROJECT_ROOT="$(pwd)"
 CACHE_ENABLED=false
 
 # Color codes for output
@@ -24,31 +19,38 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Create RAM disk on macOS if not exists
-create_ramdisk_macos() {
-    if [[ "$OSTYPE" == "darwin"* ]] && [ ! -d "/Volumes/RAMDisk" ]; then
-        echo -e "${YELLOW}Creating 512MB RAM disk for macOS...${NC}"
-        # Create 512MB RAM disk (1048576 = 512MB in 512-byte sectors)
-        diskutil erasevolume HFS+ 'RAMDisk' `hdiutil attach -nobrowse -nomount ram://1048576` 2>/dev/null
-        if [ -d "/Volumes/RAMDisk" ]; then
-            echo -e "${GREEN}✓ RAM disk created at /Volumes/RAMDisk${NC}"
-            CACHE_DIR="/Volumes/RAMDisk/claude-cache-$$"
+# Create or verify persistent RAM disk on macOS
+create_or_verify_ramdisk() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        if [ ! -d "$CACHE_BASE" ]; then
+            echo -e "${YELLOW}Creating persistent 2GB RAM disk at $CACHE_BASE...${NC}"
+            # Create 2GB RAM disk (4194304 = 2GB in 512-byte sectors)
+            diskutil erasevolume HFS+ 'ClaudeCache' `hdiutil attach -nobrowse -nomount ram://4194304` 2>/dev/null
+            if [ -d "$CACHE_BASE" ]; then
+                echo -e "${GREEN}✓ Persistent RAM disk created at $CACHE_BASE${NC}"
+                mkdir -p "$CACHE_BASE/cache/projects"
+            fi
+        else
+            echo -e "${GREEN}✓ Using existing RAM disk at $CACHE_BASE${NC}"
         fi
     fi
 }
 
 # Initialize cache directory in RAM
 init_cache() {
-    # Try to create RAM disk on macOS first
-    create_ramdisk_macos
-    if [ -d "$CACHE_DIR" ]; then
-        echo -e "${YELLOW}Cache already initialized at $CACHE_DIR${NC}"
-        return 0
-    fi
+    # Create or verify RAM disk
+    create_or_verify_ramdisk
     
-    mkdir -p "$CACHE_DIR"/{files,search,metadata}
-    echo "{}" > "$CACHE_INDEX"
-    echo -e "${GREEN}✓ Cache initialized in RAM at $CACHE_DIR${NC}"
+    if [ -d "$CACHE_DIR" ]; then
+        echo -e "${YELLOW}Using existing cache for project: $(basename "$PROJECT_ROOT")${NC}"
+        echo -e "${YELLOW}  Cache location: $CACHE_DIR${NC}"
+    else
+        mkdir -p "$CACHE_DIR"/{files,search,metadata}
+        echo "{}" > "$CACHE_INDEX"
+        echo "$PROJECT_ROOT" > "$CACHE_DIR/metadata/project_path.txt"
+        echo -e "${GREEN}✓ Cache initialized for project: $(basename "$PROJECT_ROOT")${NC}"
+        echo -e "${GREEN}  Cache location: $CACHE_DIR${NC}"
+    fi
     
     # Pre-cache common file patterns
     precache_files

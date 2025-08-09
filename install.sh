@@ -43,6 +43,11 @@ echo "[*] Downloading cache-startup.sh..."
 curl -sL "$REPO_URL/cache-startup.sh" -o ~/.claude/cache/cache-startup.sh
 chmod +x ~/.claude/cache/cache-startup.sh
 
+# Download and install cache-live.sh (NEW)
+echo "[*] Downloading cache-live.sh (with real-time sync)..."
+curl -sL "$REPO_URL/cache-live.sh" -o ~/.claude/cache/cache-live.sh
+chmod +x ~/.claude/cache/cache-live.sh
+
 # Download and install Read tool interceptor hook
 echo "[*] Downloading Read tool interceptor..."
 curl -sL "$REPO_URL/hooks/smart-read-interceptor.sh" -o ~/.claude/hooks/smart-read-interceptor.sh
@@ -124,8 +129,16 @@ echo "===================================="
 echo " Installation Complete!"
 echo "===================================="
 echo ""
-echo "Quick test:"
-echo "  $ ~/.claude/cache/smart-read.sh /path/to/large/file.js"
+echo "Quick start:"
+echo ""
+echo "  Live cache (auto-syncs changes):"
+echo "    $ ~/.claude/cache/cache-live.sh start"
+echo ""
+echo "  Standard cache (static, faster):"
+echo "    $ ~/.claude/cache/cache-startup.sh start"
+echo ""
+echo "  Test large file reading:"
+echo "    $ ~/.claude/cache/smart-read.sh /path/to/large/file.js"
 echo ""
 echo "The Read tool will now automatically handle large files!"
 echo ""

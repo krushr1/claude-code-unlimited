@@ -1,0 +1,13 @@
+# Claude cache directory
+.claude/
+
+# macOS
+.DS_Store
+
+# Temporary files
+*.tmp
+*.log
+
+# Cache pid files
+/tmp/claude-cache-*.pid
+/tmp/claude-cache-*.log
