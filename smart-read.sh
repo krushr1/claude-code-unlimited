@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Claude Code Unlimited - Smart Read
+# Claude Code Unlimited - Smart Read v2.0
 # Intelligently chooses read method based on file size
-# Bypasses Claude Code's 25k token limit
+# Bypasses Claude Code's 25k token limit with quantum processing
 
 FILE="$1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +24,7 @@ echo "   Path: $FILE"
 echo "   Size: $(numfmt --to=iec-i --suffix=B $FILE_SIZE 2>/dev/null || echo "$FILE_SIZE bytes")"
 echo "   Lines: $FILE_LINES"
 echo "   Est. Tokens: ~$ESTIMATED_TOKENS"
+echo "   Method: Smart routing enabled"
 echo ""
 
 # Smart routing based on file size
