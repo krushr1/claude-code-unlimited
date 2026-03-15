@@ -22,20 +22,26 @@ NC='\033[0m'
 # Create or verify persistent RAM disk on macOS
 create_or_verify_ramdisk() {
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        if [ ! -d "$CACHE_BASE" ]; then
-            echo -e "${YELLOW}Creating persistent 2GB RAM disk at $CACHE_BASE...${NC}"
-            # Create 2GB RAM disk (4194304 = 2GB in 512-byte sectors)
-            diskutil erasevolume HFS+ 'ClaudeCache' `hdiutil attach -nobrowse -nomount ram://4194304` 2>/dev/null
-            if [ -d "$CACHE_BASE" ]; then
-                echo -e "${GREEN}✓ Persistent RAM disk created at $CACHE_BASE${NC}"
-                # Create cache structure
-                mkdir -p "$CACHE_DIR"/{projects,metadata}
+        if [ -d "$CACHE_BASE" ]; then
+            echo -e "${GREEN}Using existing RAM disk at $CACHE_BASE${NC}"
+        else
+            echo -e "${YELLOW}Creating 2GB RAM disk at $CACHE_BASE...${NC}"
+            local dev
+            dev=$(hdiutil attach -nobrowse -nomount ram://4194304 2>/dev/null)
+            if [ -n "$dev" ]; then
+                diskutil erasevolume HFS+ 'ClaudeCache' $dev >/dev/null 2>&1
+                if [ -d "$CACHE_BASE" ]; then
+                    echo -e "${GREEN}RAM disk created at $CACHE_BASE${NC}"
+                    mkdir -p "$CACHE_DIR"/{projects,metadata}
+                else
+                    echo -e "${RED}diskutil erasevolume failed${NC}"
+                    hdiutil detach $dev 2>/dev/null
+                    return 1
+                fi
             else
-                echo -e "${RED}Failed to create RAM disk${NC}"
+                echo -e "${RED}hdiutil attach failed${NC}"
                 return 1
             fi
-        else
-            echo -e "${GREEN}✓ Using existing RAM disk at $CACHE_BASE${NC}"
         fi
     fi
     return 0
