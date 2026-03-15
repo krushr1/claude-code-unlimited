@@ -14,267 +14,206 @@
  ╚═════╝ ╚═╝  ╚═══╝╚══════╝╚═╝╚═╝     ╚═╝╚═╝   ╚═╝   ╚══════╝╚═════╝                   
 ```
 
-### 🚀 Break free from the 25,000 token limit
+### v2: Built for the 1M token context window
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/krushr1/claude-code-unlimited)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/krushr1/claude-code-unlimited)
 
 ## What is this?
 
-A powerful caching and reading system that eliminates Claude Code's 25,000 token file limit. Read files with millions of tokens, process them in parallel, and cache them for instant access.
+A project ingestion and caching system for Claude Code that takes full advantage of the 1M token context window.
+
+**v1** worked around the 25k token Read limit by chunking and intercepting.  
+**v2** flips the model: ingest your entire codebase once at session start, then never read again.
 
 ![Claude Code Unlimited Demo](images/claude-code-read.png)
 
+## The idea
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    THE PROBLEM                             │
-├─────────────────────────────────────────────────────────────┤
-│  Error: File content (66212 tokens)                        │
-│         exceeds maximum allowed tokens (25000)             │
-│                                                             │
-│  This happens with:                                        │
-│  • Large framework files                                   │
-│  • Generated or minified code                              │
-│  • Long documentation                                      │
-│  • Database exports                                        │
-│  • Log files                                               │
-└─────────────────────────────────────────────────────────────┘
+OLD WAY (v1):  Read file → hit 25k limit → chunk → re-read → edit → re-read → edit
+NEW WAY (v2):  Ingest everything → edit directly from context → done
 ```
 
-## ✨ The Solution
+Claude Opus and Sonnet now have 1M token context. That's enough to hold most codebases entirely in memory. CCU v2 ingests your project's source files with line numbers at session start, so Claude can edit directly without ever re-reading a file.
 
-Claude Code Unlimited automatically:
-- **Detects** file size before reading
-- **Splits** large files into parallel chunks
-- **Bypasses** token limits completely
-- **Caches** in RAM for 500x faster re-reads
-- **Syncs** changes in real-time with file watching
-- **Persists** cache across sessions in single volume
-- **Intercepts** Read tool failures automatically
+## How it works
 
-## 📦 Installation
+1. **`ccu-ingest.sh`** runs at session start (via hook or manually)
+2. It collects all git-tracked files, skipping binaries and vendor dirs
+3. Extracts a symbol index (functions, classes, exports) with `file:line` refs
+4. Scores files by git hotness — recently changed files load first
+5. Outputs every file as `path:linenum: content` into a single context file
+6. Stops at the 800k token budget, lists remaining files for manual access
+7. Claude reads this once. Every file is now in context with line numbers.
+8. Edits use `old_lines: "45-52"` — no re-reads needed.
 
-### Quick Install (Recommended)
+### Architecture
+
+```
+Session Start
+     │
+     ▼
+┌──────────────┐
+│ ccu-ingest   │ ── git ls-files → filter → score by hotness
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│ Context File │ ── ~/.claude/cache/ccu-context.txt
+│              │    path:1: first line
+│              │    path:2: second line
+│              │    ...up to 800k tokens
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│ Claude reads │ ── one Read call, entire project in context
+│ once         │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│ Edit with    │ ── old_lines: "45-52", new: "fixed code"
+│ line numbers │    zero re-reads for the rest of the session
+└──────────────┘
+```
+
+## Installation
+
+### Quick Install
 ```bash
 curl -sL https://raw.githubusercontent.com/krushr1/claude-code-unlimited/main/install.sh | bash
 ```
 
 ### Manual Install
 ```bash
-# Clone the repository
 git clone https://github.com/krushr1/claude-code-unlimited.git
 cd claude-code-unlimited
-
-# Run installer
 ./install.sh
 ```
 
-## Usage
+### What gets installed
 
-### Live Cache Mode (Recommended) 🔥
-Real-time file synchronization with persistent cache that survives across sessions:
-```bash
-# Start live cache with file watching
-~/.claude/cache/cache-live.sh start
+| File | Location | Purpose |
+|------|----------|---------|
+| `ccu-ingest.sh` | `~/.claude/cache/` | Full project ingestion with line numbers |
+| `smart-read.sh` | `~/.claude/cache/` | Smart file reader (size-based routing) |
+| `quantum-read.sh` | `~/.claude/cache/` | Parallel chunk reader for huge files |
+| `cache-startup.sh` | `~/.claude/cache/` | RAM disk cache manager |
+| `cache-live.sh` | `~/.claude/cache/` | Live-sync cache with file watching |
+| `smart-read-interceptor.sh` | `~/.claude/hooks/` | Read tool hook (disabled in v2) |
 
-# Check cache status
-~/.claude/cache/cache-live.sh status
+## Configuration
 
-# Force sync all files
-~/.claude/cache/cache-live.sh sync
+### CLAUDE.md snippet
 
-# Watch sync activity in real-time
-~/.claude/cache/cache-live.sh watch-log
+Add this to your project or global CLAUDE.md to activate the one-read-one-write workflow. See [CLAUDE.md](CLAUDE.md) for the full snippet.
+
+```markdown
+## CCU: One-Read-One-Write Protocol
+
+At session start, CCU ingests the full project into context with line numbers.
+After ingestion, every file is in your context as `path:linenum: content`.
+
+Rules:
+- DO NOT re-read files that were ingested. They are already in your context window.
+- DO NOT use grep/search tools on the project. Search your context instead.
+- EDIT DIRECTLY using the line numbers from ingestion (e.g., old_lines: "45-52").
+- Files that were skipped (too large or over budget) can still be read normally.
+- One read (at session start) + one write (per edit). No extra reads ever.
 ```
 
-**Key Features:**
-- Uses persistent volume at `/Volumes/ClaudeCache`
-- Cache survives across runs (no data loss)
-- Project isolation using MD5 hashes
-- Automatic file change detection
-- Efficient rsync-based updates
+### Hooks setup
 
-### Standard Cache Mode
-Static cache for maximum speed (doesn't auto-sync changes):
+**Auto-ingest on session start** (recommended):
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "~/.claude/cache/ccu-ingest.sh"
+      }
+    ]
+  }
+}
+```
+
+**Read interceptor** (disabled by default in v2, useful for smaller context models):
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/smart-read-interceptor.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CCU_MAX_TOKENS` | `800000` | Total token budget for ingestion |
+| `CCU_MAX_FILE_TOKENS` | `800000` | Per-file token limit |
+
+Set lower values if you're on a smaller context model (e.g., `200000` for 200k context).
+
+## Caching (optional)
+
+The RAM disk cache is independent of ingestion. It pre-copies project files to a RAM volume for faster access by other tools.
+
 ```bash
-# Start standard cache system
+# Create RAM disk and pre-cache project files
 ~/.claude/cache/cache-startup.sh start
 
-# Smart read any file (auto-detects size and method)
-~/.claude/cache/smart-read.sh path/to/large/file.js
-
-# Force quantum parallel reading
-~/.claude/cache/quantum-read.sh path/to/huge/file.js full
-```
-
-## 📊 Real Performance
-
-```
-╔════════════╦═══════════╦══════════════════════╦═══════════════════════════╗
-║ File Size  ║  Tokens   ║       BEFORE         ║         AFTER             ║
-╠════════════╬═══════════╬══════════════════════╬═══════════════════════════╣
-║   240KB    ║  60,000   ║  ❌ Exceeds limit    ║  ✅ 0.8s parallel read    ║
-║   1.2MB    ║  300,000  ║  ❌ Cannot read      ║  ✅ 2.1s quantum chunks   ║
-║   5MB      ║ 1,250,000 ║  ❌ Impossible       ║  ✅ 4.5s full parallel    ║
-╚════════════╩═══════════╩══════════════════════╩═══════════════════════════╝
-```
-
-## How It Works
-
-### Architecture Overview
-```
-     ┌──────────────┐
-     │  Large File  │
-     └──────┬───────┘
-            │
-            ▼
-    ┌───────────────┐
-    │ Size Analysis │ ──────► Est. Tokens: 300,000
-    └───────┬───────┘
-            │
-            ▼
-    ┌───────────────┐
-    │ Smart Router  │
-    └───────┬───────┘
-            │
-     ┌──────┴──────┬──────────┐
-     ▼             ▼           ▼
-  [<20k]       [20-100k]    [>100k]
-     │             │           │
-     ▼             ▼           ▼
-  Direct      Smart Mode   Parallel
-  Read        (sections)    Chunks
-     │             │           │
-     └──────┬──────┴───────────┘
-            ▼
-    ┌───────────────┐
-    │  RAM CACHE    │ ◄─── Persistent at /Volumes/ClaudeCache
-    └───────────────┘
-            │
-            ▼
-    ┌───────────────┐
-    │   SUCCESS!    │
-    └───────────────┘
-```
-
-### Cache Structure
-```
-/Volumes/ClaudeCache/           # Persistent RAM disk
-├── cache/
-│   └── projects/
-│       ├── [project-hash-1]/   # First project
-│       │   ├── files/           # Cached file contents
-│       │   ├── search/          # Cached search results
-│       │   └── metadata/        # Project info
-│       └── [project-hash-2]/   # Second project
-│           └── ...
-```
-
-## Features
-
-- **Persistent Cache** 🔥 - Single volume that persists across sessions
-- **Live Sync Mode** - Real-time cache updates with file changes
-- **No Token Limits** - Read files of any size
-- **Parallel Processing** - Split large files into chunks
-- **RAM Caching** - 500x faster repeated access
-- **Project Isolation** - Multiple projects cached separately
-- **Auto-Detection** - Smart routing based on file size
-- **File Watching** - fswatch (macOS) / inotify (Linux) integration
-- **Zero Config** - Works immediately after install
-- **Cross-Platform** - macOS, Linux support (Windows coming)
-
-## Examples
-
-### Reading a Large Component File
-```bash
-# Before: Error - exceeds 25000 tokens
-# After: Automatically handled!
-
-claude> Read the Dashboard.jsx file
-# Cache system detects 85k tokens, uses quantum read, success!
-```
-
-### Working with Live Cache
-```bash
-# Start cache for your project
-cd /your/project
+# Or use live mode with file watching
 ~/.claude/cache/cache-live.sh start
 
-# Edit files normally - cache auto-updates
-vim src/large-component.js
-
-# Check what's cached
-~/.claude/cache/cache-live.sh status
-# Live Cache Statistics:
-#   RAM Disk: /Volumes/ClaudeCache (persistent)
-#   Current Project: your-project
-#   Project files: 247
-#   File watcher: Running (PID: 12345)
+# Check cache stats
+~/.claude/cache/cache-startup.sh stats
 ```
 
-### Processing Multiple Large Files
-```bash
-# Read multiple framework files without errors
-for file in src/components/*.jsx; do
-    ~/.claude/cache/smart-read.sh "$file" > /dev/null
-done
-```
+Cache location: `/Volumes/ClaudeCache` (macOS). Created automatically, no sudo needed.
 
-## Technical Details
+## v1 vs v2
 
-### Persistent Cache System
-- **Single Volume**: All projects share `/Volumes/ClaudeCache`
-- **Project Isolation**: Each project gets unique hash-based subdirectory
-- **Efficient Updates**: Uses rsync for differential syncing
-- **File Watching**: Real-time detection of file changes
-- **Smart Cleanup**: Project-specific cache clearing
+| | v1 | v2 |
+|---|---|---|
+| **Problem** | 25k token Read limit | Wasted tool calls re-reading files |
+| **Solution** | Chunk + intercept | Ingest everything once |
+| **Context model** | Any | 1M token (Opus/Sonnet) |
+| **Read interceptor** | Active (blocks large reads) | Disabled (no limit needed) |
+| **Key file** | `smart-read.sh` | `ccu-ingest.sh` |
+| **Workflow** | Read → chunk → read again → edit | Ingest → edit directly |
 
-### Performance Optimizations
-- RAM-based storage for instant access
-- Parallel chunk processing for large files
-- Memoized search results
-- Automatic cache invalidation
-- Background file watching
-
-## 🤝 Contributing
-
-Contributions are welcome! Areas for improvement:
-- Windows compatibility
-- Streaming for ultra-large files (>10MB)
-- Integration with Claude Code core
-- Performance optimizations
-- Cache compression algorithms
-
-## License
-
-MIT License - See [LICENSE](LICENSE) file for details
-
-## Credits
-
-Created by [krushr](https://github.com/krushr1) with assistance from Claude
-
-## Issues
-
-Found a bug? Have a suggestion? [Open an issue](https://github.com/krushr1/claude-code-unlimited/issues)
+To use v1 behavior on smaller context models, remove `exit 0` from line 3 of `hooks/smart-read-interceptor.sh`.
 
 ## Requirements
 
 ### macOS
-- fswatch for live mode: `brew install fswatch`
-- ripgrep for fast search: `brew install ripgrep`
-- fd for fast find (optional): `brew install fd`
+- `jq` for JSON processing: `brew install jq`
+- `fswatch` for live cache mode: `brew install fswatch`
+- `ripgrep` for fast search (optional): `brew install ripgrep`
 
 ### Linux
-- inotify-tools for live mode: `apt install inotify-tools`
-- ripgrep for fast search: `apt install ripgrep`
-- fd-find for fast find (optional): `apt install fd-find`
+- `jq`: `apt install jq`
+- `inotify-tools` for live mode: `apt install inotify-tools`
+- `ripgrep` (optional): `apt install ripgrep`
 
-## Support
+## License
 
-If this tool helps you, please star the repository! ⭐
+MIT License - See [LICENSE](LICENSE) file for details.
 
-```
-─────────────────────────────────────────────────────────────────
-  Breaking the barriers of AI-assisted coding, one token at a time
-─────────────────────────────────────────────────────────────────
-```
+## Credits
+
+Created by [krushr](https://github.com/krushr1) with Claude.

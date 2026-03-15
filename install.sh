@@ -1,145 +1,91 @@
 #!/bin/bash
 
-# Claude Code Unlimited Installer
-# Break free from the 25,000 token limit
+# Claude Code Unlimited Installer v2
+# 1M context: ingest everything, edit from line numbers, never re-read
 
-echo "===================================="
-echo " Claude Code Unlimited Installer"
-echo "===================================="
+echo "====================================="
+echo " Claude Code Unlimited v2 Installer"
+echo "====================================="
 echo ""
 echo "This will install:"
+echo "  * Full project ingestion (ccu-ingest.sh)"
 echo "  * Smart file reading (no token limits)"
-echo "  * Parallel chunk processing" 
+echo "  * Parallel chunk processing"
 echo "  * RAM disk caching"
-echo "  * Automatic Read tool interception"
+echo "  * Read tool interceptor (disabled by default for 1M context)"
 echo ""
 echo "Installation directory: ~/.claude/cache"
 echo ""
 
-# Check for required commands
 command -v jq >/dev/null 2>&1 || { echo "[!] jq is required but not installed. Install it first."; exit 1; }
-command -v curl >/dev/null 2>&1 || { echo "[!] curl is required but not installed."; exit 1; }
 
-# GitHub repo base URL
-REPO_URL="https://raw.githubusercontent.com/krushr1/claude-code-unlimited/main"
+REPO_BASE="https://raw.githubusercontent.com/krushr1/claude-code-unlimited/main"
 
-# Create directories
 echo "[*] Creating directories..."
 mkdir -p ~/.claude/cache
 mkdir -p ~/.claude/hooks
 
-# Download and install smart-read.sh
-echo "[*] Downloading smart-read.sh..."
-curl -sL "$REPO_URL/smart-read.sh" -o ~/.claude/cache/smart-read.sh
-chmod +x ~/.claude/cache/smart-read.sh
+for script in ccu-ingest.sh smart-read.sh quantum-read.sh cache-startup.sh cache-live.sh; do
+    echo "[*] Downloading $script..."
+    command -v curl >/dev/null 2>&1 && curl -sL "$REPO_BASE/$script" -o ~/.claude/cache/$script
+    chmod +x ~/.claude/cache/$script
+done
 
-# Download and install quantum-read.sh
-echo "[*] Downloading quantum-read.sh..."
-curl -sL "$REPO_URL/quantum-read.sh" -o ~/.claude/cache/quantum-read.sh
-chmod +x ~/.claude/cache/quantum-read.sh
-
-# Download and install cache-startup.sh
-echo "[*] Downloading cache-startup.sh..."
-curl -sL "$REPO_URL/cache-startup.sh" -o ~/.claude/cache/cache-startup.sh
-chmod +x ~/.claude/cache/cache-startup.sh
-
-# Download and install cache-live.sh (NEW)
-echo "[*] Downloading cache-live.sh (with real-time sync)..."
-curl -sL "$REPO_URL/cache-live.sh" -o ~/.claude/cache/cache-live.sh
-chmod +x ~/.claude/cache/cache-live.sh
-
-# Download and install Read tool interceptor hook
 echo "[*] Downloading Read tool interceptor..."
-curl -sL "$REPO_URL/hooks/smart-read-interceptor.sh" -o ~/.claude/hooks/smart-read-interceptor.sh
+command -v curl >/dev/null 2>&1 && curl -sL "$REPO_BASE/hooks/smart-read-interceptor.sh" -o ~/.claude/hooks/smart-read-interceptor.sh
 chmod +x ~/.claude/hooks/smart-read-interceptor.sh
 
-# Update settings.json if it exists
 if [ -f ~/.claude/settings.json ]; then
     echo "[*] Backing up existing settings.json..."
-    cp ~/.claude/settings.json ~/.claude/settings.json.backup.$(date +%Y%m%d-%H%M%S)
-    
-    # Check if PreToolUse hook already exists
-    if grep -q "PreToolUse" ~/.claude/settings.json; then
-        echo "[!] PreToolUse hooks already configured in settings.json"
-        echo "[!] Please manually add the Read tool interceptor to your hooks"
+    cp ~/.claude/settings.json ~/.claude/settings.json.backup.20260315-135724
+
+    if grep -q "SessionStart\|PreToolUse" ~/.claude/settings.json; then
+        echo "[!] Hooks already configured in settings.json"
+        echo "[!] Add these hooks manually if not present:"
         echo ""
-        echo "Add this to your PreToolUse hooks array:"
-        echo '  {'
-        echo '    "matcher": "Read",'
-        echo '    "hooks": ['
-        echo '      {'
-        echo '        "type": "command",'
-        echo '        "command": "~/.claude/hooks/smart-read-interceptor.sh"'
-        echo '      }'
-        echo '    ]'
-        echo '  }'
+        echo "  SessionStart hook (auto-ingest):"
+        echo '    { "type": "command", "command": "~/.claude/cache/ccu-ingest.sh" }'
+        echo ""
+        echo "  PreToolUse Read hook (interceptor, disabled by default):"
+        echo '    { "matcher": "Read", "hooks": [{ "type": "command", "command": "~/.claude/hooks/smart-read-interceptor.sh" }] }'
     else
-        echo "[*] Adding hook configuration to settings.json..."
-        # This is complex JSON manipulation - for safety, just inform user
-        echo "[!] Please manually add the hook configuration to ~/.claude/settings.json"
-        echo ""
-        echo "Add this to your settings.json:"
-        echo '"hooks": {'
-        echo '  "PreToolUse": ['
-        echo '    {'
-        echo '      "matcher": "Read",'
-        echo '      "hooks": ['
-        echo '        {'
-        echo '          "type": "command",'
-        echo '          "command": "~/.claude/hooks/smart-read-interceptor.sh"'
-        echo '        }'
-        echo '      ]'
-        echo '    }'
-        echo '  ]'
-        echo '}'
+        echo "[!] Please manually add hooks to settings.json — see CLAUDE.md for the JSON snippet"
     fi
 else
     echo "[*] Creating new settings.json with hook configuration..."
-    cat > ~/.claude/settings.json << 'EOF'
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/smart-read-interceptor.sh"
-          }
-        ]
-      }
-    ]
-  }
+    python3 -c "
+import json, pathlib
+cfg = {
+    \"hooks\": {
+        \"SessionStart\": [{\"type\": \"command\", \"command\": \"~/.claude/cache/ccu-ingest.sh\"}],
+        \"PreToolUse\": [{\"matcher\": \"Read\", \"hooks\": [{\"type\": \"command\", \"command\": \"~/.claude/hooks/smart-read-interceptor.sh\"}]}]
+    }
 }
-EOF
+pathlib.Path.home().joinpath('.claude', 'settings.json').write_text(json.dumps(cfg, indent=2))
+"
 fi
 
-# Verify installation
 echo ""
 echo "[*] Verifying installation..."
-if [ -f ~/.claude/cache/smart-read.sh ] && [ -f ~/.claude/cache/quantum-read.sh ] && [ -f ~/.claude/cache/cache-startup.sh ]; then
-    echo "[✓] All files installed successfully!"
-else
-    echo "[!] Some files may not have installed correctly"
-    exit 1
-fi
+ok=true
+for f in ~/.claude/cache/ccu-ingest.sh ~/.claude/cache/smart-read.sh ~/.claude/cache/quantum-read.sh ~/.claude/cache/cache-startup.sh ~/.claude/cache/cache-live.sh ~/.claude/hooks/smart-read-interceptor.sh; do
+    [ ! -f "$f" ] && { echo "[!] Missing: $f"; ok=false; }
+done
+$ok && echo "[OK] All files installed successfully!" || { echo "[!] Some files missing"; exit 1; }
 
 echo ""
-echo "===================================="
+echo "====================================="
 echo " Installation Complete!"
-echo "===================================="
+echo "====================================="
 echo ""
-echo "Quick start:"
+echo "v2 workflow (1M context):"
+echo "  1. Start a new Claude Code session"
+echo "  2. CCU auto-ingests your project with line numbers"
+echo "  3. Edit directly from context — no re-reads needed"
 echo ""
-echo "  Live cache (auto-syncs changes):"
-echo "    $ ~/.claude/cache/cache-live.sh start"
+echo "Manual ingest:  ~/.claude/cache/ccu-ingest.sh"
+echo "RAM disk cache: ~/.claude/cache/cache-startup.sh start"
+echo "Live cache:     ~/.claude/cache/cache-live.sh start"
 echo ""
-echo "  Standard cache (static, faster):"
-echo "    $ ~/.claude/cache/cache-startup.sh start"
-echo ""
-echo "  Test large file reading:"
-echo "    $ ~/.claude/cache/smart-read.sh /path/to/large/file.js"
-echo ""
-echo "The Read tool will now automatically handle large files!"
-echo ""
-echo "For more information: https://github.com/krushr1/claude-code-unlimited"
+echo "Add the CLAUDE.md snippet to your project for best results."
+echo "See: CLAUDE.md in the repo for the full snippet."
